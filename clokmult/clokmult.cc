@@ -241,6 +241,16 @@ int main()
                 printf("beat @ %dus, period=%d\n", int(nowUs), int(gatePeriodUs));
             }
         }
+        else
+        {
+            // if the clock input has been awol for two beats, assume it's stopped
+            const uint32_t timeSincePrevGate = nowUs - lastGateStartUs;
+            if (timeSincePrevGate > (2 * gatePeriodUs))
+            {
+                puts("clock stopped");
+                clocksReceived = 0;
+            }
+        }
 
         // echo the incoming gate on the built-in LED
         lastInputState = inputState;

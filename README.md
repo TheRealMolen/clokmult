@@ -1,5 +1,5 @@
 
-#  k l o k k e n f ä n g l e r
+#  k l ø k k e n f ä n g l e r
 
 
 to build & upload this:
