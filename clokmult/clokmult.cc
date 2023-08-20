@@ -4,17 +4,61 @@
 // fangling the clocks
 //
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include "pico/stdlib.h"
 
 constexpr int ClockInPin = 6;
+constexpr int BtnUpInPin = 8;
+constexpr int BtnDnInPin = 9;
 constexpr int LedPin = 25;
 
 constexpr int ClockOutAPin = 14;
 constexpr int ClockOutALedPin = 12;
 constexpr int ClockOutBPin = 15;
 constexpr int ClockOutBLedPin = 13;
+
+
+class SevenSeg
+{
+public:
+    using pins_t = std::array<int, 7>;
+
+    constexpr SevenSeg(const pins_t& pins) : mPins(pins)
+    {
+        for (int pin : mPins)
+        {
+            if (pin < 0)
+                continue;
+                
+            gpio_init(pin);
+            gpio_set_dir(pin, GPIO_OUT);
+        }
+    }
+
+    void SetRaw(uint m) const;
+
+private:
+    pins_t mPins;
+};
+
+void SevenSeg::SetRaw(uint m) const
+{
+    for (int pin : mPins)
+    {
+        if (pin >= 0)
+        {
+            bool set = (m & 1) != 0;
+            gpio_put(pin, set);
+        }
+
+        m >>= 1;
+    }
+}
+
+SevenSeg gDisp({17, 16, 20, 21, 22, 18, 19});
 
 
 class ClockOut
@@ -84,6 +128,8 @@ void ClockOut::Tick(uint32_t deltaTimeUs)
     gpio_put(mLedPin, gateOut);
 }
 
+
+
 ClockOut gClockOutA('A', ClockOutAPin, ClockOutALedPin);
 ClockOut gClockOutB('B', ClockOutBPin, ClockOutBLedPin);
 
@@ -112,13 +158,21 @@ int main()
     gpio_init(ClockInPin);
     gpio_set_dir(ClockInPin, GPIO_IN);
     gpio_pull_up(ClockInPin);
+    gpio_init(BtnUpInPin);
+    gpio_set_dir(BtnUpInPin, GPIO_IN);
+    gpio_pull_up(BtnUpInPin);
+    gpio_init(BtnDnInPin);
+    gpio_set_dir(BtnDnInPin, GPIO_IN);
+    gpio_pull_up(BtnDnInPin);
 
     gpio_init(LedPin);
     gpio_set_dir(LedPin, GPIO_OUT);
 
-    //stdio_usb_init();
-    stdio_init_all();
-    puts("hello dave");
+    stdio_usb_init();
+
+    uint sevensegMask = 0xc6;
+    int32_t timeTillNextSS = 0;
+    gDisp.SetRaw(sevensegMask);
 
     int clocksReceived = 0;
     bool lastInputState = readInputPin();
@@ -128,11 +182,31 @@ int main()
     bool beat = false;
     for(;;)
     {
-        // read from clock input
-        const bool inputState = readInputPin();
         const uint64_t nowUs = micros();
         const uint32_t deltaTimeUs = uint32_t(nowUs - lastTimeUs);
         lastTimeUs = nowUs;
+
+        // tick the 7seg
+        timeTillNextSS -= deltaTimeUs;
+        if (timeTillNextSS <= 0)
+        {
+            uint newMask = (sevensegMask >> 1) | ((sevensegMask & 1) << 6);
+            sevensegMask = newMask;
+            gDisp.SetRaw(sevensegMask);
+            timeTillNextSS = 150*1000;
+        }
+
+        if (!gpio_get(BtnUpInPin))
+        {
+            gDisp.SetRaw(0x73);
+        }
+        else if (!gpio_get(BtnDnInPin))
+        {
+            gDisp.SetRaw(0x5e);
+        }
+
+        // read from clock input
+        const bool inputState = readInputPin();
 
         // was that a rising edge?
         if (!lastInputState && inputState)
